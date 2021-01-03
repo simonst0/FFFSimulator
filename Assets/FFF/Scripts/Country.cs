@@ -1,7 +1,6 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using System;
 
 public class Country : MonoBehaviour, IRTSUpdateReciever
 {
@@ -22,6 +21,23 @@ public class Country : MonoBehaviour, IRTSUpdateReciever
     [SerializeField]
     private Dictionary<int, Fraction> activeFractions = new Dictionary<int, Fraction>();
 
+    private AbilityManager abilityManager;
+
+    //Country Stats
+    [SerializeField]
+    private float climateRiskIndex = 0;
+    [SerializeField]
+    private float humanDevelopmentIndex = 0;
+    [SerializeField]
+    private float educationLevel = 0;
+    [SerializeField]
+    private Continent continent;
+    [SerializeField]
+    private PoliticalSystem politicalSystem;
+    [SerializeField]
+    private ClimateZone climateZone;
+
+
     float oneInhabitantPercentage { get { return 1.0f / inhabitants; } }
 
     private void Start()
@@ -29,6 +45,9 @@ public class Country : MonoBehaviour, IRTSUpdateReciever
         NeighbourSphereCast();
         Infect(0);
         RTSController.Instance.RegisterUpdateReceiver(this);
+        RegisterToAbilityBroadcasts();
+        abilityManager = FindObjectOfType<AbilityManager>();
+        Debug.Assert(abilityManager != null, "Ability Manager not found in active scene!"); 
     }
 
     public void UpdateRTSSimulation(int steps)
@@ -78,22 +97,6 @@ public class Country : MonoBehaviour, IRTSUpdateReciever
             fraction.Value.influencePercentage = Mathf.Clamp01(fraction.Value.influencePercentage + modifiedDeltas[count]);
             count++;
         }
-        //ClearSmallFractions();
-    }
-
-    void ClearSmallFractions()
-    {
-        List<int> idsToClear = new List<int>();
-        foreach (var fraction in activeFractions)
-            if (fraction.Value.influencePercentage < oneInhabitantPercentage)
-                idsToClear.Add(fraction.Value.id);
-        for (int i = 0; i < idsToClear.Count; i++)
-        {
-            int id = idsToClear[i];
-            Destroy(activeFractions[id]);
-            activeFractions.Remove(id);
-        }
-
     }
 
     private void UpdateColors()
@@ -119,14 +122,15 @@ public class Country : MonoBehaviour, IRTSUpdateReciever
         for (int i = 0; i < activeFractions.Count; i++) // remove one person from existing fractions
             if (activeFractions[i].id != id)
                 activeFractions[i].influencePercentage -= oneInhabitantPercentage * activeFractions[i].influencePercentage;
+        foreach (var ability in abilityManager.activeAbilities)
+            ApplyAbilityEffect(ability, fraction);
     }
 
     public void Spread(int id)
     {
         foreach (var neighbour in neighbouringCountries)
         {
-            float spreadChanze = activeFractions[id].baseSpreadChance * activeFractions[id].influencePercentage;
-            if (UnityEngine.Random.value <= spreadChanze)
+            if (Random.value <= activeFractions[id].spreadChance)
             {
                 neighbour.Infect(activeFractions[id].id);
                 Debug.Log("Spread to " + neighbour.name);
@@ -138,5 +142,33 @@ public class Country : MonoBehaviour, IRTSUpdateReciever
     {
         if (RTSController.Instance)
             RTSController.Instance.DeregisterUpdateReceiver(this);
+    }
+
+    private void RegisterToAbilityBroadcasts()
+    {
+        foreach (var ability in FindObjectsOfType<Ability>())
+            Broadcaster.Instance.RegisterToBroadcastImmediate(ability.abilityName, "OnAbilityBroadcast", this);
+    }
+
+    private void OnAbilityBroadcast(params object[] list)
+    {
+        Ability ability = Util.GetBroadcastParamAtIndex<Ability>(list, 0);
+        foreach (var fraction in activeFractions)
+            ApplyAbilityEffect(ability, fraction.Value);
+    }
+
+    private void ApplyAbilityEffect(Ability ability, Fraction targetFraction)
+    {
+        foreach (var constraint in ability.effect.constraints)
+        {
+            if (!constraint.fractions.Contains(targetFraction.id) 
+                && (constraint.climateZone != climateZone || constraint.climateZone != ClimateZone.All)
+                && (constraint.continent != continent || constraint.continent != Continent.All)
+                && (constraint.politicalSystem == politicalSystem || constraint.politicalSystem != PoliticalSystem.All)
+                && constraint.minClimateRiskIndex <= climateRiskIndex && constraint.minEducationLevel <= educationLevel &&
+                constraint.minHumanDevelopmentIndex <= humanDevelopmentIndex)
+                return;
+        }
+        targetFraction.ApplyAbilityEffect(ability.effect);
     }
 }

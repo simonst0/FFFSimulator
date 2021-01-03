@@ -8,15 +8,14 @@ public class Ability : MonoBehaviour
     public string abilityName;
     public string abilityDescription;
     public Effect effect;
+    public float abilityCost;
 
     public List<string> requiredAbilityNames;
 
     private void Awake()
     {
         foreach (var ability in requiredAbilityNames)
-        {
             Broadcaster.Instance.RegisterToBroadcastImmediate(ability, "OnAbilityUnlockBroadcast", this);
-        }
     }
 
     private void OnAbilityUnlockBroadcast(params object[] list)
@@ -28,12 +27,19 @@ public class Ability : MonoBehaviour
             requiredAbilityNames.Remove(unlocked.abilityName);
         }
         if (requiredAbilityNames.Count == 0)
-            Unlock();
+            UnlockAbility();
     }
 
-    private void Unlock()
+    private void UnlockAbility()
     {
+        unlocked = true;
+    }
 
+    public void ActivateAbility()
+    {
+        if (!unlocked) // later add cost for ability here 
+            return;
+        Broadcaster.Instance.Broadcast(abilityName, false, this);
     }
 }
 
@@ -42,7 +48,6 @@ public class Effect
 {
     public AbilityEffect effect;
     public float value;
-    [SerializeField]
     public EffectConstraint[] constraints;
     
 }
@@ -51,18 +56,20 @@ public enum AbilityEffect
 {
     None,
     Spread,
-    Growth,
-    Radicalization
+    Growth
+    //Radicalization
 }
 
 [System.Serializable]
 public class EffectConstraint
 {
+    public List<int> fractions = new List<int>(){ -1 };
     public Continent continent = Continent.All;
     public ClimateZone climateZone = ClimateZone.All;
     public PoliticalSystem politicalSystem = PoliticalSystem.All;
     public float minEducationLevel = 0;
     public float minHumanDevelopmentIndex = 0;
+    public float minClimateRiskIndex = 0;
 }
 
 public enum Continent
